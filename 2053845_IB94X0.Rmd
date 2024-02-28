@@ -1,0 +1,887 @@
+---
+title: 'Business Statistics End of Term Assessment IB94X0 2023-2024 #1'
+author: '2053845'
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+---
+
+# Statement of Academic Integrity
+
+This is to certify that the work I am submitting is my own. All external references and sources are clearly acknowledged and identified within the contents. I am aware of the University of Warwick regulation concerning plagiarism and collusion. 
+
+No substantial part(s) of the work submitted here has also been submitted by me in other assessments for accredited courses of study, and I acknowledge that if this has been done an appropriate reduction in the mark I might otherwise have received will be made.
+
+---
+
+# Packages required
+
+```{r setup, message=FALSE}
+
+library(dplyr)
+library(tidyverse)
+library(car)
+library(ggplot2)
+library(emmeans)
+library(corrplot)
+library(Rmisc)
+library(Hmisc)
+library(gridExtra)
+```
+# Question 1
+
+## Brief
+We are interested in the effect upon bike hire usage as a result of three elements of the COVID
+response: Work From Home, Rule of 6 Indoors, and the Eat Out to Help Out scheme.
+Use the data provided to perform regression analyses that examine the effect of these elements upon
+the number of bike rentals. You should also explore whether it is appropriate to control for the effect of potential differences between different years, months, and days of the week.
+
+## Data Dictionary
+
+Variable  | Description
+------------- | -------------
+data | The specific dates when a certain number of bicycles were rented.
+Hires | The total quantity of bicycles rented on a specified date.
+schools_closed | Represents if a "schools closed" regulation was implemented; (1 means active, 0 means inactive)
+pubs_closed | Represents if a 'pubs_closed' regulatio was implemented; (1 means active, 0 means inactive)
+shops_closed | Represents if a 'shops_closed' regulatio was implemented (1 means active, 0 means inactive)
+eating_places_closed | Represents if a 'eating_places_closed' policy was implemented (1 means active, 0 means inactive)
+stay_at_home | Represents if a 'stay_at_home' policy was implemted (1 means active, 0 means inactive)
+household_mixing_indoors_banned | Represents if a 'household_mixing_indoors_banned' policy was implemted (1 means active, 0 means inactive)
+wfh | Represents if a 'wfh' policy was implemted (1 means active, 0 means inactive)
+curfew | Represents if a 'curfew' policy was implemted (1 means active, 0 means inactive)
+eat_out_to_help_out | Represents if a 'eat_out_to_help_out' policy was implemted (1 means active, 0 means inactive)
+day | day of the week on the given date
+month | Month on the given date
+year | Year on the given date
+
+## Data Preparation
+First, we will read and import the.csv data file, and generate a summary.
+```{r, warning=FALSE}
+# Reading the .csv datafile and importing it as 'datasetBikeHires'
+datasetBikeHires <- read.csv("London_COVID_bikes.csv", stringsAsFactors = TRUE)
+
+# Summary of the dataset
+summary(datasetBikeHires)
+str(datasetBikeHires)
+```
+
+We will then check for missing values.
+```{r, warning=FALSE}
+# Checking for any missing values
+sum(is.na(datasetBikeHires))
+```
+In this dataset, there are no missing values.
+
+We wil then check for duplicated values.
+```{r, warning=FALSE}
+# Checking for duplicate values
+sum(duplicated(datasetBikeHires))
+```
+In this dataset, there are no duplicate values.
+
+## Visualisations 
+### Removing Outliers
+
+```{r,warning=FALSE}
+
+# Summarising bike hires data by month and year, calculating the mean number of hires
+
+summaryBikeHires <- datasetBikeHires %>% group_by(month, year) %>% summarise(meanHires = mean(Hires))
+summaryBikeHires
+
+# Plotting a histogram with a density plot for the distribution of bike hires
+ggplot(datasetBikeHires, aes(x = Hires, y = ..density..)) + 
+  geom_histogram(aes(fill = ..x..), alpha = 0.6, color = "darkgrey") + 
+  scale_fill_gradient(low = "lightblue", high = "purple") + 
+  geom_density(color = "darkgreen", linewidth = 1, linetype = "dashed") + 
+  geom_vline(data = summaryBikeHires, aes(xintercept = meanHires), color = "darkred", linetype = "dashed", linewidth = 1) +
+  labs(title = "Figure 1: The Distribution of Bike Rentals in London", x = "Number of Hires", y = "Density") +
+  theme_light(base_size = 14) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.title = element_text(face = "bold"),
+        legend.position = "none")
+
+```
+
+The dotted red line represents the mean of the distribution.
+
+
+```{r, warning=FALSE}
+# Creating a boxplot to visualise the distribution of the number of bike hires by year
+ggplot(datasetBikeHires, aes(x = factor(year), y = Hires)) + # Year-based fill color,
+  geom_boxplot(aes(fill = factor(year)), alpha = 0.7, color = "black") +
+  geom_jitter(shape = 16, color = "darkgray", size = 0.5, width = 0.2, alpha = 0.5) + # Jittered points to show individual hire data,
+  labs(title = "Figure 2: Distribution of Number of Bike Hires by Years", 
+       x = "Years", 
+       y = "Number of Hires") +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+        axis.title.x = element_text(face = "bold"),
+        axis.title.y = element_text(face = "bold"),
+        legend.position = "none") 
+
+```
+
+These visualisations offer a detailed look at the pattern of bike hires throughout the dataset's timeline. A signficant rightward skew in Figure 1 points to occasional spikes in bicycle rentals, though these spikes are not typical. The detection of outliers within the data suggests specific occasions or events, such as rail strikes in central London that force individuals to commute by bike, might trigger these unusual spikes in rental activity.
+
+```{r, warning=FALSE}
+# Filtering out the potential outliers. These are any observations from the dataset that fall outside the range of more than 2 standard deviations from the mean value
+datasetBikeHiresNoOutliers <- datasetBikeHires %>% group_by(year) %>% filter(Hires <= (mean(Hires) +2*sd(Hires)) & Hires >= (mean(Hires)-2*sd(Hires)))
+```
+
+These are the new visualised distributions of Bike Hires after removing the outliers.
+
+```{r,warning=FALSE}
+summaryBikeHiresNoOutliers <- datasetBikeHiresNoOutliers %>% group_by(month, year) %>% summarise(meanHiresNoOutliers = mean(Hires))
+summaryBikeHiresNoOutliers
+
+ggplot(datasetBikeHiresNoOutliers, aes(x = Hires, y = ..density..)) + 
+  geom_histogram(aes(fill = ..x..), alpha = 0.6, color = "darkgrey") + 
+  scale_fill_gradient(low = "lightblue", high = "purple") + 
+  geom_density(color = "darkgreen", linewidth = 1, linetype = "dashed") + 
+  geom_vline(data = summaryBikeHiresNoOutliers, aes(xintercept = meanHiresNoOutliers), color = "darkred", linetype = "dashed", linewidth = 1) +
+  labs(title = "Figure 3: The Distribution of Bike Rentals in London
+       (Outliers Removed)", x = "Number of Hires", y = "Density") +
+  theme_light(base_size = 14) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.title = element_text(face = "bold"),
+        legend.position = "none")
+
+```
+
+```{r, warning=FALSE}
+
+ggplot(datasetBikeHiresNoOutliers, aes(x = factor(year), y = Hires)) + 
+  geom_boxplot(aes(fill = factor(year)), alpha = 0.7, color = "black") +
+  geom_jitter(shape = 16, color = "darkgray", size = 0.5, width = 0.2, alpha = 0.5) +
+  labs(title = "Figure 4: Distribution of Number of Bike Hires by Years 
+       (Outliers Removed)", 
+       x = "Years", 
+       y = "Number of Hires") +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+        axis.title.x = element_text(face = "bold"),
+        axis.title.y = element_text(face = "bold"),
+        legend.position = "none")
+
+
+
+```
+
+
+After removing the outliers from the data, we see a consistent increase in bike rentals beginning in 2010, with a notable dip in 2013. It's interesting to note that the COVID-19 pandemic affected the nation between 2020 and 2021, which coincided with a notable spike in bike rentals. Several limitations and public health initiatives were put into place at this time, which may have deterred invididuals from public trasport to bikes.
+
+### Observations
+The average monthly bike rentals for each year will be checked order to identify any clear annual patterns. 
+```{r,warning=FALSE}
+# Adding levels for all months to arrange them chronologically
+
+months = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")
+datasetBikeHiresNoOutliers <- datasetBikeHiresNoOutliers %>% mutate(month = factor(month, levels = months))
+
+# Adding levels for all weekdays
+datasetBikeHiresNoOutliers <- datasetBikeHiresNoOutliers %>% mutate(day = factor(day, levels =c ("Mon", "Tue", "Wed","Thu", "Fri", "Sat", "Sun")))
+
+# Plotting the distribution of bike hires for each month across years
+datasetBikeHiresByMonth <- datasetBikeHiresNoOutliers %>% group_by(month, year)
+
+ggplot(datasetBikeHiresByMonth, aes(x = month, y = Hires, group = interaction(month, year), color = month)) +
+  geom_line(position = position_dodge(width = 0.3)) +
+  stat_summary(fun = "mean", geom = "point", size = 1, position = position_dodge(width = 0.2)) +
+  scale_color_viridis_d(begin = 0.5, end = 1, name = "Year") +
+  labs(title = "Figure 5: Sum of Hires by month across years", x = "Year", y = "Mean Hires", color = "Year") +
+  theme_minimal() +
+  facet_wrap(~ year, scales = "free_y", ncol = 4)
+
+```
+
+Figure 5 displays the monthly bike hire patterns across various years, revealing a seasonal trend where hires typically surge in May, June, and July, before declining to annual lows from November to February. This suggests weather conditions and outdoor activity preferences significantly impact bike rental volumes. The year 2010 is an anomaly, exhibiting much lower hire rates throughout the year, and also containing incomplete data.
+
+The data also shows deviations from established patterns, particularly in 2020 due to the emergence of COVID-19. Despite expectations for an increase, bike hires fell in March as restrictions were introduced. However, from April to May, hires rose sharply as 'Stay at home' orders were lifted, continuing to increase linearly through July as restrictions eased, except for work from home mandates. This upward trend stalled from July to September, then sharply declined as work from home and other COVID-19 restrictions were reinstated.
+
+In the years following 2022, with most COVID-19 restrictions relaxed except for work from home, the bike hire landscape shifted again. Specifically, in 2023, there was a noticeable dip in hires during the summer months compared to previous years, potentially due to incomplete data.
+
+
+## Analysis
+
+Dividing the data into two segments, before and after lockdown, will allow us to check the monthly trends in bike hires.
+```{r, warning=FALSE}
+#Creating a variable to flag whether a record is BeforeCovid or during COVID
+datasetBikeHiresNoOutliers <- datasetBikeHiresNoOutliers %>% mutate(COVIDIndicator=ifelse(year<"2020", "BeforeCovid","DuringCOVID"))
+```
+
+Comparing bike hires before and during COVID using emmeans and contrast
+
+```{r, warning=FALSE}
+# Adding labels to correctly display the sequence of 'Before COVID' and 'COVID' data points on the chart.
+COVIDIndicatorLabels <- c("BeforeCovid","DuringCOVID")
+  datasetBikeHiresNoOutliers$COVIDIndicator <- factor(datasetBikeHiresNoOutliers$COVIDIndicator, levels = COVIDIndicatorLabels)
+
+# Utilizing the 'lm' function for linear modeling and 'emmeans' for estimating confidence intervals, alongside 'confint' for checking differences, to analyse bike hire trends before and during COVID years.
+  
+modelBikeHiresAcrossTime <- lm(Hires~COVIDIndicator, data=datasetBikeHiresNoOutliers)
+( modelBikeHiresAcrossTime.emm <- emmeans(modelBikeHiresAcrossTime, ~COVIDIndicator)  )
+(  modelBikeHiresAcrossTime.contrast <- confint(pairs(modelBikeHiresAcrossTime.emm))  )
+
+# Plotting the average number of bike hires for the periods before and during COVID years.
+
+ggplot(summary(modelBikeHiresAcrossTime.emm), aes(x=COVIDIndicator, y=emmean, ymin=lower.CL, ymax=upper.CL)) + geom_point() + geom_linerange() + 
+labs(y="Average number of Hires", x="Periods of Time", subtitle="Error bars are 95% Confidence Intervals", title="Figure 6: Bike Hires") + ylim(25000,30000) + theme_light(base_size = 14) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.title = element_text(face = "bold"),
+        legend.position = "none")
+
+# Plotting the difference in the average number of bike hires for the periods before and during COVID years.
+
+ggplot(modelBikeHiresAcrossTime.contrast, aes(x=contrast, y=-estimate, ymin=-lower.CL, ymax=-upper.CL)) + 
+ geom_point() + geom_linerange() + 
+labs(y="Change in the averages of Hires", x="Difference", subtitle="Error bars are 95% Confidence Intervals", title="Figure 7: Difference in Bike Hires") +
+scale_x_discrete(labels = c("During COVID - Before COVID")) + ylim(1500,3500)  + theme_light(base_size = 14) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.title = element_text(face = "bold"),
+        legend.position = "none")
+
+```
+
+The average number of bike hires before COVID was 26,178 (95% CI: 25,875 to 26,481). During the COVID years, the average increased to 28,839 (95% CI: 28,351 to 29,310), showing an average increase of 2,652 hires (95% CI: 2,085 to 3,220) in the COVID period compared to pre-COVID years.
+The dataset will be filtered to create two separate datasets: one that will only contain records from the pre-COVID-19 era (2011–2019) and another that will only include records from the COVID-19 era (2020–2023), when COVID had a major impact.
+
+```{r, warning=FALSE}
+#  Filter the dataset to include only records from the pre-COVID-19 era (2011-2019)
+preCOVID19 <- datasetBikeHiresNoOutliers %>%
+  filter(year %in% c(2011:2019)) 
+# Filter the dataset to include only records during the COVID-19 era (2020-2023).
+duringCOVID19 <- datasetBikeHiresNoOutliers %>%
+  filter(year %in% c(2020:2023))
+```
+
+Conducting a t-test to confirm any statistically significant difference
+```{r,warning=FALSE}
+
+# two-sample t-test to compare bike hires before and during COVID 
+t.test(preCOVID19$Hires, duringCOVID19$Hires)
+```
+
+The two-sample t-test demonstrates that the years during and after COVID saw a higher average number of bike hires, with a t-value of 8.8221 and a p-value < 0.05, confirming a statistically significant difference in bike hires across these periods. This supports the claim that bike usage increased following the COVID pandemic.
+
+## Correlation
+Running correlation checks
+
+```{r, warning=FALSE}
+# Creating the correlation matrix
+visualisedCorrMatrix <- rcorr(as.matrix(select_if(datasetBikeHiresNoOutliers, is.numeric)))
+visualisedCorrMatrix
+```
+
+```{r, warning=FALSE}
+# Graphically plotting the correlation matrix for easier interpretation
+
+corrplot(visualisedCorrMatrix$r, method = "color", 
+         type = "upper", # Displaying only the upper half of the matrix
+         tl.col = "blue", 
+         tl.srt = 45, # Rotating text labels to 45 degrees for an easier read
+         col = colorRampPalette(c("blue", "white", "green"))(100),
+         main = "Figure 8: Correlation Matrix", # Title of the plot
+         mar = c(1, 1, 1, 1), # Set even margins around the plot
+         tl.cex = 0.7, 
+         cl.cex = 0.65, 
+         tl.pos = "lt" 
+)
+
+```
+
+The analysis shows that various pandemic-related measures—'schools_closed', 'pubs_closed', 'shops_closed', 'eating_places_closed', 'stay_at_home', and 'household_mixing_indoors_banned'—are highly correlated with one another.
+
+Furthermore, 'Rule_of_6_indoors' exhibits a significant positive correlation with bike hires, indicated by a collinearity value of 0.12 and a p-value of less than 0.05, marking it as statistically significant. 'Eat_out_to_help_out' also shows a positive link with hires, evidenced by a collinearity of 0.08 and a p-value of less than 0.05, again highlighting its statistical significance. The wfh policy similarly correlates positively with the number of hires, with a collinearity of 0.06 and a p-value of less than 0.05, indicating its statistical significance.
+
+Contrastingly, there is a negative correlation between 'eat_out_to_help_out' and 'work from home' policies, as the collinearity is -0.04 with a p-value of less than 0.05, making this correlation statistically significant. However, the relationship between 'rule_of_6_indoors' and 'eat_out_to_help_out' is negatively correlated with a collinearity of -0.01 and a p-value of 0.45, suggesting this correlation is not statistically significant.
+
+Lastly, a positive correlation exists between 'rule_of_6_indoors' and 'work from home' policies, shown by a collinearity of 0.24 and a p-value of less than 0.05, confirming its statistical significance.
+
+Next, we will plot the relationship between each policy and the number of bike hires.
+
+```{r,warning=FALSE}
+ggplot(datasetBikeHiresNoOutliers, aes(y = Hires, x = wfh)) +
+    geom_point(color = "blue") + 
+    geom_smooth(method = lm, color = "red") + 
+    labs(x = "Work From Home", y = "Bike Hires", title = "Figure 9: Correlation between wfh and Hires") + theme_light(base_size = 14) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.title = element_text(face = "bold"),
+        legend.position = "none")
+
+
+ggplot(datasetBikeHiresNoOutliers, aes(y = Hires, x = rule_of_6_indoors)) +
+    geom_point(color = "green") + 
+    geom_smooth(method = lm, color = "orange") + 
+    labs(x = "Rule of 6 Indoors", y = "Bike Hires", title = "Figure 10: Correlation between rule_of_6_indoors and Hires") + theme_light(base_size = 14) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.title = element_text(face = "bold"),
+        legend.position = "none")
+
+ggplot(datasetBikeHiresNoOutliers, aes(y = Hires, x = eat_out_to_help_out)) +
+    geom_point(color = "purple") + 
+    geom_smooth(method = lm, color = "brown") + 
+    labs(x = "Eat Out To Help Out", y = "Bike Hires",title = "Figure 11: Correlation between and eat_out_to_help_out and Hires") + theme_light(base_size = 14) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.title = element_text(face = "bold"),
+        legend.position = "none")
+    
+
+
+```
+
+## Modelling
+
+### Eat_Out_To_Help_Out, Work From Home and Rule_of_6_Indoors
+
+We will explore the effect of the above 3 COVID-19 policies on Bike Hires using Regression Analysis
+
+```{r, warning=FALSE}
+# Linear regression model on the new dataset only containing data from 2014 to 2023 for all of the combined relevant policies 'wfh', 'rule of 6 indoors' and 'eat out to help out'
+
+modelCovidPolicies <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out, datasetBikeHiresNoOutliers)
+summary(modelCovidPolicies)
+```
+
+```{r, warning=FALSE}
+confint(modelCovidPolicies)
+```
+The multiple regression analysis reveals a strong positive impact of 'rule of 6 indoors', with a t-value of 7.72 (p < .001), where each unit increase in 'rule of 6 indoors' is associated with an average rise of 7439.7 in bike rentals (95% CI = [5546,9333]).
+
+Similarly, 'eat out to help out' significantly boosts bike rentals, with a t-value of 5.87 (p < .001) and each unit increase predicting an average jump of 9871.5 in rentals (95% CI = [6574,13168]).
+
+Contrarily, the effect of wfh on bike rentals is barely noticeable, with a t-value of 2.489 and a p-value of 0.0128, suggesting the relationship might not be statistically significant and any observed increase in rentals due to wfh might be attributed to chance rather than a genuine effect. This finding contradicts the hypothesis suggested by the correlation matrix, which expected a positive correlation between 'wfh' and bike hires to be statistically significant.
+thesugges Narrowing the dataset to years closer to the COVID pandemic (2014-2023) instead of starting from 2010, when bike rentals were already low, might reveal a negative correlation between wfh and bike rentals. We will now update our model to include bike rental data spanning from 2014 to 2023.
+
+```{r,warning=FALSE}
+datasetBikeHiresNoOutliersLimited <- datasetBikeHiresNoOutliers %>%
+  filter(year %in% c(2014:2023))
+```
+
+```{r, warning=FALSE}
+
+# Linear regression model on the new dataset only containing data from 2014 to 2023 for all of the combined relevant policies 'wfh', 'rule of 6 indoors' and 'eat out to help out'. 
+modelTestBikeHiresLimited <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out, datasetBikeHiresNoOutliersLimited)
+summary(modelTestBikeHiresLimited)
+
+```
+
+```{r, warning=FALSE}
+confint(modelTestBikeHiresLimited)
+```
+
+The positive impact of 'rule_of_6_indoors' and 'eat_out_to_help_out' on bike rentals continues, indicating a stable relationship over the years, despite potential adversity. Focusing more on the period around and after COVID-19, and considering the rise of technology, the analysis now reveals a significant negative influence of working from home (wfh) on rentals. With a t-value of -4.847 (p < .001), each increase in wfh predicts a reduction of 1582 in bike rentals, with a 95% confidence interval between -2221 and -942, showing statistical significance not seen in earlier data.
+
+
+```{r, warning=FALSE}
+anova(modelTestBikeHiresLimited)
+```
+
+```{r, warning=FALSE}
+# Using the multiple regression with the interaction term on the new dataset
+
+modelCovidPoliciesInteraction <- lm(Hires ~ wfh * rule_of_6_indoors * eat_out_to_help_out, datasetBikeHiresNoOutliersLimited)
+summary(modelCovidPoliciesInteraction)
+confint(modelCovidPoliciesInteraction)
+
+```
+
+The analysis reveals significant positive effects from 'eat_out_to_help_out' (CI = [4300, 10680], t = 4.60, p < 0.001), 'rule_of_6_indoors' (CI = [6053, 18756], t = 3.83, p < 0.001), and significant negative effects due to 'wfh' (CI = [-2171, -886], t = -4.66, p < 0.001). However, the negative interaction between 'wfh' and 'rule_of_6_indoors' (CI = [-12262, 1002], t = -1.67) was not statistically significant (p > 0.001).
+
+No interactions were found between 'eat_out_to_help_out' and 'rule_of_6_indoors', 'eat_out_to_help_out' and 'wfh', or among all three factors combined. A VIF test will be conducted to ensure low risk of variable correlation.
+
+```{r}
+#Another further check for multicollinearity
+VIFTest <- vif(modelTestBikeHiresLimited)
+VIFTest
+```
+The VIF analysis presents values close to 1 for all variables, showing minimal risk of multicollinearity within the model. Typically, multicollinearity becomes a concern when VIF values rise above 5 or 10.
+
+### Days, Months, Years
+We shall now explore controlling the time variables : Days, Months and Years
+
+```{r,warning=FALSE}
+
+# Linear regression of each policy with all the following: years, months and days
+
+#WFH
+modelHiresWFH <- lm(Hires ~ wfh + day + month + year, data = datasetBikeHiresNoOutliers)
+summary(modelHiresWFH)
+confint(modelHiresWFH)
+modelHiresWFH_emm <- emmeans(modelHiresWFH, ~ wfh) 
+modelHiresWFH_emm
+(modelHiresWFH_contrast <- confint(pairs(modelHiresWFH_emm)))
+
+# Rule of 6 Indoor
+modelHiresRuleof6Indoor <- lm(Hires ~ rule_of_6_indoors + day + month + year, data = datasetBikeHiresNoOutliers)
+summary(modelHiresRuleof6Indoor)
+confint(modelHiresRuleof6Indoor)
+modelHiresRuleof6Indoor_emm <- emmeans(modelHiresRuleof6Indoor, ~ rule_of_6_indoors) 
+modelHiresRuleof6Indoor_emm
+modelHiresRulesof6Indoor_contrast <- confint(pairs(modelHiresRuleof6Indoor_emm))
+modelHiresRulesof6Indoor_contrast
+
+#Eat out to help out
+modelHiresEatOut <- lm(Hires ~ eat_out_to_help_out + day + month + year, data = datasetBikeHiresNoOutliers)
+summary(modelHiresEatOut)
+confint(modelHiresEatOut)
+modelHiresEatOut_emm <- emmeans(modelHiresEatOut, ~ eat_out_to_help_out) 
+modelHiresEatOut_emm
+modelHiresEatOut_contrast <- confint(pairs(modelHiresEatOut_emm))
+modelHiresEatOut_contrast
+
+```
+
+Days of the week significantly influence bike rentals, with weekends, especially Sundays and Saturdays, showing a decrease in rentals (e.g., 'daySun' has a t-value of -3712.8, p < 0.05 in the 'modelHiresWFH', indicating fewer rentals on weekends). This decrease is likely because fewer people need to rent bikes for commuting on weekends. Months also affect bike rentals, with a general increase except in December, possibly due to colder weather. Additionally, year-on-year, bike rentals show a positive trend, suggesting growing popularity over time. The pandemic years, specifically 2020 and 2021, saw a rise in hires, possibly because of sudden changes in travel habits. We will now compare the original model against each of the newly developed models.
+
+
+```{r, warning=FALSE}
+# Comparing our pwith control for days
+anova(modelHiresWFH)
+anova(modelHiresEatOut)
+anova(modelHiresRuleof6Indoor)
+anova(modelHiresWFH,modelHiresEatOut,modelHiresRuleof6Indoor,modelCovidPolicies)
+```
+
+The ANOVA results show that the factors 'wfh', 'rule_of_6_indoors', and 'eat_out_to_help_out' significantly affect bike rental numbers. Yet, 'year' is the most significant predictor, with the highest F value and the largest sum of squares, explaining the most variance in bike rentals compared to 'day' and 'month'. This emphasises the importance of accounting for differences across years, months, and days. We will next create models that individually account for days, months, and years to demonstrate how each improves the model fit, and then again use the original model to contrast with each of the new models.
+
+```{r, warning=FALSE}
+# Controling for days
+modelHiresByDays <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out + day, datasetBikeHiresNoOutliers)
+
+# Controling for months
+modelHiresByMonths <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out + month, datasetBikeHiresNoOutliers)
+
+# Controling for years
+modelHiresByYears <- lm(Hires ~ wfh + rule_of_6_indoors + eat_out_to_help_out + factor(year), datasetBikeHiresNoOutliers)
+```
+
+```{r, warning=FALSE}
+anova(modelCovidPolicies, modelHiresByDays)
+anova(modelCovidPolicies, modelHiresByMonths)
+anova(modelCovidPolicies, modelHiresByYears)
+```
+
+Controlling our base model for days, months, and years significantly improves its fit, as shown by Anova: for days (F(2,4627)=32.127, p<0.001), for months (F(2,4622)=211.07, p<0.001), and for years (F(3,4620)=87.296, p<0.001). This indicates it's important to account for potential differences across days, months, and years. The ANOVA comparison of the three models shows that all are statistically significant, with p-values less than 0.001.
+
+
+
+
+# Question 2
+
+## Brief
+
+The data provided contains information on e-book sales over a period of many months. Each row in
+the data represents one book. The values of the variables are taken across the entire time period, so
+daily.sales is the average number of sales (minus refunds) across all days in the period, and sale.price is the average price for which the book sold in the period.
+
+## Data Dictionary
+
+Variable        | Description
+----------------| -----------------------------
+sold by         | Platform where ebooks are sold
+publisher.type  | Publisher classification (e.g., Amazon, Big Five, indie))
+genre           | Book genre (e.g., Adult Fiction, Non-Fiction, YA Fiction)
+avg.review      | Average review rating of the ebook (on a scale from 0 to 5)
+daily.sales     | Average daily sales (excluding refunds) over the period
+sale.price      | Average selling price of the ebook over the period
+total.reviews   | Total number of reviews received by the ebook
+sale.price      | Price at which the book was sold
+
+
+## Data Preparation
+
+```{r, warning=FALSE}
+# Reading the .csv datafile and importing it as 'datasetBooks'
+datasetBooks <- read.csv("publisher_sales.csv", stringsAsFactors = TRUE)
+```
+
+```{r, warning=FALSE}
+# Checking for any missing values
+sum(is.na(datasetBooks))
+```
+In this dataset, there are no missing values.
+
+```{r, warning=FALSE}
+# Checking for duplicate values
+sum(duplicated(datasetBooks))
+```
+In this dataset, there are no duplicate values. Check the structure and summary of the dataset,
+
+```{r, warning=FALSE}
+# Check the structure of the dataset
+str(datasetBooks)
+# Printing the summary of the dataset
+summary(datasetBooks)
+```
+
+### Removing Outliers
+
+The 'daily.sales' dataset contains negative values, which is not feasible since sales cannot be negative. Consequently, these records are considered outliers and must be removed.
+
+```{r, warning=FALSE}
+# Removing the 'daily.sales' outliers
+datasetBooks <- datasetBooks %>% filter(daily.sales >= 0)
+```
+
+The 'total.reviews' and 'avg.review' variables include instances where the values are zero, despite potential sales occurring. 
+
+```{r, warning=FALSE}
+# Removing the 'avg.review' and 'total.reviews' outliers
+datasetBooks <- datasetBooks %>% filter(total.reviews >0, avg.review > 0)
+```
+
+These outliers could have distorted the overall performance analysis of our model, so it was important to eliminate them.
+Check the structure and summary of the dataset again after removal.
+
+```{r, warning=FALSE}
+# Checking the structure and summary of the dataset again after removing outliers.
+str(datasetBooks)
+summary(datasetBooks)
+```
+
+## Visualisations (Outliers)
+
+We will start by visualising the dataset with respect to the dependant variable : daily sales.
+```{r,warning=FALSE}
+
+#Creating a duplicate dataset to not tamper with the original and maintain data integrity.
+datasetBooksDuplicate <- datasetBooks
+
+# Summarising daily sales statistics for the entire dataset
+summaryDailySales <- summarise(datasetBooksDuplicate, meanDailySales = mean(daily.sales), standardDeviationDailySales = sd(daily.sales))
+summaryDailySales
+
+# Creating a histogram and density plot to visualize the distribution of daily sales
+ggplot(datasetBooksDuplicate, aes(x = daily.sales, y = ..density..)) + 
+  geom_histogram(aes(fill = ..x..), binwidth = 10, alpha = 0.6, color = "darkgrey") + 
+  scale_fill_gradient(low = "lightblue", high = "purple") + 
+  geom_density(color = "darkgreen", linewidth = 1, linetype = "dashed") + 
+  geom_vline(data = summaryDailySales, aes(xintercept = meanDailySales), color = "darkred", linetype = "dashed", linewidth = 1) + 
+  labs(title = "Figure 12 - Distribution of Daily Sales", x = "Daily Sales", y = "Density") +
+  theme_light(base_size = 14) +
+  theme(plot.title = element_text(size = 14, hjust = 0.5, face = "bold"), 
+        axis.title = element_text(size = 12, face = "bold"),
+        legend.position = "none")
+```
+The distribution of daily sales is once more displayed in Figure 12, but this time the mean distribution—86.37—is indicated by the red dotted line. Since the dataset has a fairly distribution, it shouldn't be necessary to remove any further outliers. This will be verified by comparing the statistical measures obtained before and after any prospective outliers have been removed.
+
+```{r, warning=FALSE}
+# Filtering out the potential outliers. These are any observations from the dataset that fall outside the range of more than 2 standard deviations from the mean value
+
+datasetBooksNoOutliers <- datasetBooksDuplicate %>% filter(daily.sales <= (mean(daily.sales)+2*sd(daily.sales)) & daily.sales >= (mean(daily.sales)-2*sd(daily.sales)))
+
+mean(datasetBooksNoOutliers$daily.sales)
+sd(datasetBooksNoOutliers$daily.sales)
+```
+The mean distribution without outliers is 83.34, which is similar to the mean of 86.37 including outliers. As there is neglible difference, these outliers will be kept. The standard deviation without outliers is also 26.1452, and as this is similar to the standard deviation with outliers (30.20528), they will be kept.
+
+We will now visualise the dataset with respect to sale price.
+
+```{r,warning=FALSE}
+
+# Summarising sale price statistics for the entire dataset
+summarySalePrice <- summarise(datasetBooksDuplicate, MeanSalePrice = mean(sale.price), StandardDeviationSalesPrice = sd(sale.price))
+summarySalePrice
+
+# Making a histogram and density plot to visualise the distribution of sale prices
+ggplot(datasetBooksDuplicate, aes(x = sale.price, y = ..density..)) + 
+  geom_histogram(aes(fill = ..x..), alpha = 0.6, color = "darkgrey") + 
+  scale_fill_gradient(low = "lightblue", high = "purple") + 
+  geom_density(color = "darkgreen", linewidth = 1, linetype = "dashed") + 
+  geom_vline(data = summarySalePrice, aes(xintercept = MeanSalePrice), color = "darkred", linetype = "dashed", linewidth = 1) + 
+  labs(title = "Figure 13: Distribution of Sale Prices", x = "Sale Prices", y = "Density") +
+  theme_light(base_size = 14) +
+  theme(plot.title = element_text(size = 14, hjust = 0.5, face = "bold"), 
+        axis.title = element_text(size = 12, face = "bold"),
+        legend.position = "none")
+
+```
+
+The distribution of daily sales is displayed in Figure 13, with the mean distribution —10.30 — indicated by the red dotted line. We will now plot the distribution of sale price specifically grouping with respect to genre.
+
+```{r,warning = FALSE}
+
+ggplot(datasetBooksDuplicate, aes(x = sale.price, fill = genre)) + 
+  geom_histogram(position = "identity", alpha = 0.5, binwidth = 1) +  
+  scale_color_viridis_d() +
+  labs( x = "Sale Price ",  y = "Number of Books", title = "Figure 14 - Distribution of Sale Price by Genre",) +   theme_minimal(base_size = 14) +
+ theme(plot.title = element_text(size = 14, hjust = 0.5, face = "bold"), 
+        axis.title = element_text(size = 12, face = "bold"), legend.position = "bottom",
+        legend.box.background = element_rect(color = "black", fill = "white"))
+```
+
+## Visualisations (Relationships)
+Do books have more/fewer sales depending upon their average review scores and total number of reviews?
+
+To show the relationship between the total number of reviews and the number of daily sales, we will first create a scatter plot.
+```{r,warning = FALSE}
+
+ggplot(data = datasetBooksDuplicate, aes(x = total.reviews, y = daily.sales, color = genre)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", color = "red") + # Add a linear regression line to show trend
+  labs(title = "Figure 15: Relationship between Total Number of Reviews 
+       and Average Daily Sales", x = "Total Number of Reviews", y = "Average Daily Sales", color = "Book Genre") + scale_color_viridis_d() + theme_minimal(base_size = 14) + # Color scale for different genres
+  theme(plot.title = element_text(size = 14, hjust = 0.5, face = "bold"), 
+        axis.title = element_text(size = 12, face = "bold"),
+        legend.position = "bottom",  # Place legend at bottom to streamline visual flow
+        legend.box.background = element_rect(color = "black", fill = "white"))
+  
+```
+
+Figure 15's best fit line demonstrates a positive correlation between the daily sales of books and their total number of reviews. This suggests that a book's sales are influenced by its review count, with higher review numbers potentially leading to increased sales. To determine the statistical significance of this relationship, we will later examine the p-value.
+
+Another scatter plot is created to illustrate the relationship between average reviews score and the number of daily sales.
+
+```{r, warning=FALSE}
+ggplot(data = datasetBooksDuplicate, aes(x = avg.review, y = daily.sales, color = genre)) + 
+  geom_point() +  # Display scatter points with color based on 'genre'
+  geom_smooth(method = "lm", color = "red") +  # Add a regression line in a subtle gray, dotted style
+  labs(title = "Figure 16: Relationship between Average Reviews 
+and Average Daily Sales", x = "Average Review Score", y = "Average Daily Sales",color = "Book Genre") +  
+  scale_color_viridis_d() +  
+  theme_bw(base_size = 14) +  # Use a clean, white-background theme for contrast and readability
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 12, face = "bold"),
+        legend.position = "bottom",  # Place legend at bottom to streamline visual flow
+        legend.box.background = element_rect(color = "black", fill = "white"), 
+        )  
+```
+
+Figure 16's line of best fit indicates a negligible correlation between daily sales and the average review score, suggesting that the latter has little to no impact on sales. From this analysis, it is clear that a book's likelihood of being purchased is more strongly influenced by the quantity of its reviews rather than its average rating.
+
+What is the effect of sale price upon the number of sales, and is this different across genres?
+Another scattor plot is created to show the relationship between sale price and daily sales.
+```{r, warning=FALSE}
+
+ggplot(data = datasetBooksDuplicate, mapping = aes(x = sale.price, y = daily.sales, fill = genre)) + 
+    geom_point(mapping = aes(color = genre)) + scale_color_viridis_d() + #Points to represent each data point, color mapped by genre
+  # Linear regression line to show trend
+    geom_smooth(method="lm", col="#000000") + ggtitle("Figure 17: Relationship between Sale Price 
+    and Average Daily Sales") + theme_bw(base_size = 12) + theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5), axis.title = element_text(size = 12, face = "bold"),
+        legend.position = "bottom",  # Legend at bottom for visual flow
+        legend.box.background = element_rect(color = "black", fill = "white"), ) + labs(x= "Average Sales Price", y="Average number of Daily Sales", color = "Genre")
+  
+```
+
+In Figure 17, when examining how sale prices vary across genres, it is observed that both young adult (YA) and adult fiction books show a negative correlation between their daily sales and sale prices. On the other hand, non-fiction ebooks present a trend line that is almost horizontal, suggesting that their sales hardly decrease even as sale prices rise. To gain deeper insights into these trends, conducting a regression analysis would prove valuable.
+
+## Correlation
+
+### Collinearity
+
+Visualising the relationship between the total number of reviews and the average review score of books to assess for
+collinearity.
+
+```{r,warning=FALSE}
+ggplot(datasetBooksDuplicate, aes(x = total.reviews, y = avg.review)) + 
+  geom_point(aes(color = avg.review), alpha = 0.6) + 
+  scale_color_gradient(low = "lightblue", high = "purple") + 
+  geom_smooth(method = "lm", color = "darkred", linetype = "dashed") + 
+  labs(x = "Total Reviews", y = "Average Review", 
+       title = "Figure 18: Relationship Between Total Reviews and Average Reviews") +
+theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5), axis.title = element_text(size = 12, face = "bold"),legend.position = "right",  # Legend at bottom for visual flow
+        legend.box.background = element_rect(color = "black", fill = "white")) 
+
+```
+
+Checking the correlation between variables by creating a correlation matrix.
+
+```{r, warning=FALSE}
+
+ # Using 'rcorr` from the Hmisc package to compute the correlation matrix between daily sales, avg review, total reviews and sale price
+visualisedCorrMatrix2 <-rcorr(as.matrix(select_if(datasetBooksDuplicate,is.numeric)))
+visualisedCorrMatrix2
+
+#  Return both the correlation coefficients and significance levels.
+```
+
+
+```{r, warning=FALSE}
+
+# 
+corrplot(visualisedCorrMatrix2$r, method = "color", 
+         type = "upper", # Only showing the upper half of the matrix to avoid displaying unnecessary information
+         tl.col = "blue", 
+         tl.srt = 90, 
+         col = colorRampPalette(c("blue", "white", "green"))(100), 
+         title = "Figure 19: Correlation Matrix", 
+         mar = c(3, 3, 3, 3), 
+         addCoef.col = "black", 
+         tl.cex = 0.7, 
+         cl.cex = 0.75
+)
+
+```
+
+As the sale price of books increases, a decrease in daily book sales is seen, indicating a negative correlation between sale price and daily sales, with a collinearity value of 0.51 and a significance level of $p < 0.05. This statistically significant correlation suggests that the observed relationship between ebook sale prices and daily sales is unlikely to be a result of random chance.
+
+Conversely, a positive correlation is found between the daily sales of books and the total number of reviews, shown by a correlation coefficient of 0.68 and a significance level of $p < 0.05. This confirms the statistical significance of the relationship, indicating that an increase in the number of reviews is associated with an increase in daily sales.
+
+The analysis further reveals that the predictive variables largely exhibit independence, with minimal pairwise correlations. Specifically, the correlation between average review scores and total number of reviews is nearly nonexistent, with a negative collinearity value of 0.01, though its statistical significance, given a p value greater than 0.05, remains unconfirmed. The Variance Inflation Factor (VIF) scores will be used to further examine collinearity within our models.
+
+The relationship between average review scores and daily book sales is negatively correlated, albeit weakly, with a collinearity value of 0.02. This suggests a virtually non-existent correlation, yet the lack of statistical significance, indicated by a $ value greater than 0.05, leaves this claim again unconfirmed.
+
+
+## Modelling 
+### Total Review and Average Rating on Daily Sales
+
+####  Simple Regression
+
+We anticipate that as the number of reviews for that book increases, so will the overall daily sales. We will check if it is significant by using a simple linear regression model to estimate the effect of total number of reviews on average daily sales.
+
+```{r,warning=FALSE}
+simpleRegSalesTotalReviews <- lm(daily.sales ~ total.reviews, data = datasetBooksDuplicate)
+summary(simpleRegSalesTotalReviews)
+confint(simpleRegSalesTotalReviews)
+```
+
+The results from this linear regression model reveal a positive and statistically significant correlation between total reviews and daily sales, shown by a high t-statistic of 71.74 and a p-value < 0.05. This indicates that with every additional review, daily sales are expected to increase by an average of 0.56 units, with the confidence interval for this estimate lying between 0.54 and 0.57.
+
+Creating a simple linear regression model to determine the impact of average reviews on average daily sales
+```{r,warning=FALSE}
+simpleRegSalesAvgReviews <- lm(daily.sales~avg.review, data = datasetBooksDuplicate)
+summary(simpleRegSalesAvgReviews)
+confint(simpleRegSalesAvgReviews)
+```
+The analysis indicates that the impact of average ratings on daily ebook sales is not statistically significant, with a t-statistic of 1.29 and a p-value of 0.197, exceeding the 0.05 threshold. 0.05. An increase in the average review score by one unit is linked to a average drop of 0.99 in daily sales, with the confidence interval for this effect ranging between -2.52 and 0.52.
+
+These results suggest that average review scores may not serve as a reliable predictor for daily sales, as highlighted by the model's insignificant p-value for the average review variable and a low R-squared value, indicating limited explanatory power.
+
+
+#### Multiple regression 
+Combining both total and average reviews into a multiple linear regression model to determine the impact of both variables on the dependant variable daily sales.
+
+```{r,warning=FALSE}
+multipleRegAvgTotal <- lm(daily.sales ~ total.reviews + avg.review, data = datasetBooksDuplicate)
+summary(multipleRegAvgTotal)
+confint(multipleRegAvgTotal)
+```
+The multiple regression analysis reveals a substantial positive correlation between the total number of reviews and daily sales, with a t-value of 71.72 and a p-value below 0.001. For every additional review, there's an estimated increase of 0.56 in daily sales (95% CI = [0.54, 0.57]). 
+
+Conversely, the analysis shows that the influence of average review scores on daily sales is not statistically significant, evidenced by a t-value of -0.94 and a p-value of 0.345. An increase by one point in average reviews predicts a decrease of 0.54 in daily sales (95% CI = [-1.65, 0.58]).
+
+#### Interaction Term
+
+```{r, warning=FALSE}
+
+multipleRegAvgTotalInteraction <- lm(daily.sales ~ avg.review * total.reviews, datasetBooksDuplicate)
+summary(multipleRegAvgTotalInteraction)
+confint(multipleRegAvgTotalInteraction)
+```
+
+#### VIF
+
+
+```{r,warning=FALSE}
+# Examining the differences between the models' VIF scores with and without intraction terms.
+vif(multipleRegAvgTotal)
+vif(multipleRegAvgTotalInteraction)
+```
+
+In the multipleRegAvgTotal model, the VIF analysis presents values close to 1 for all variables, showing minimal risk of multicollinearity within the model. 
+
+The multipleRegAvgTotalInteraction model introduces an interaction variable (total.reviews * avg.review), leading to substantially increased VIF values. This rise in VIF is not a concern for multicollinearity, but due to including the interaction term into the regression analysis.
+
+#### Anova
+
+```{r, warning=FALSE}
+
+# Comparing all models
+
+anova(simpleRegSalesTotalReviews)
+anova(simpleRegSalesAvgReviews)
+anova(multipleRegAvgTotal)
+anova(multipleRegAvgTotal,multipleRegAvgTotalInteraction)
+anova(simpleRegSalesTotalReviews,simpleRegSalesAvgReviews,multipleRegAvgTotal,multipleRegAvgTotalInteraction)
+
+```
+
+The independent variable, total number of reviews, has a significant effect on the dependant variable, daily sales, with a F-value of 5146.6, and a significance level of p <0.05. The p-value being less than 0.05 confirms the statistical significance of this effect, majorly reducing the probability that the findings are accidental.
+
+The other independent variable, average daily reviews, has no significant effect on daily sales, as shown by a F-value of 1.6644 and a p-value of 0.1971. This comparison, employing the same sample size, shows a considerably weaker link for average reviews relative to total reviews. The p-value > 0.05 means there is insufficient evidence to conclude that average reviews has a significant effect on daily sales.
+
+The ANOVA test shows that including both 'total.reviews' and 'avg.review' considerably enhances the model's prediction power when compared to using simply 'total.reviews' or 'avg.review'. This is the best predictor of daily sales among the examined models.
+
+This is because adding the interaction term (`total.reviews * avg.review`) in a new model does not provide an additional improvement on top of this. Despite the integration of this term, the basic multiple regression model without the interaction term proves more effective, as highlighted by a higher F-value of 5143.50 and p < 0.001 , compared to the interaction terms low F-value of 0.046 and p > 0.01. 
+
+### Daily Sales and Sale prices
+
+#### Regression
+
+Creating a simple linear regression model to estimate the effect of daily sales on sale price.
+```{r,warning=FALSE}
+simpleRegDailySales <- lm(daily.sales~sale.price, data = datasetBooksDuplicate)
+summary(simpleRegDailySales)
+confint(simpleRegDailySales)
+```
+In the linear regression model, a t-value of 45.69 and a p-value less than 0.001 (95% CI [-4.15,-3.81]) show that there is a significant negative impact of sale price on daily sales, and every 1 point increase in sale price predicts an average reduction in daily sales of 3.98 points (CI = [-4.15, -3.80]). Now, let's incorporate genre into the model and see if there is a significant effect on the daily sales.
+
+
+```{r,warning=FALSE}
+
+simpleRegDailySalesGenre <- lm(daily.sales ~ sale.price + genre, datasetBooksDuplicate)
+summary(simpleRegDailySalesGenre)
+confint(simpleRegDailySalesGenre)
+
+```
+ 
+This model reinforces the inverse relationship between sale price and average daily sale, showing a decrease of 1.43 units in daily sales for every one unit increase in sale price, with a t value of -9.98 and a p value of <.001 (95% CI [-1.71, -1.15]), even after controlling for other variables. This suggests a significant deviation from zero.
+
+
+#### Interaction
+
+```{r,warning=FALSE}
+
+simpleRegDailySalesGenreInteraction <- lm(daily.sales~sale.price*genre, data = datasetBooksDuplicate)
+summary(simpleRegDailySalesGenreInteraction)
+
+simpleRegDailySales_emm <- emmeans(simpleRegDailySalesGenre, ~genre) 
+simpleRegDailySales_emm
+
+# Calculating 95% confidence intervals for pairwise comparisons of genre along with significance levels.
+
+simpleRegDailySales_pair <- confint(pairs(simpleRegDailySales_emm))
+simpleRegDailySales_pair
+
+```
+
+When the model is adjusted to include an interaction term, sale price interacting with non-fiction books does not emerge as a significant factor, showing a t-value of 1.84, with a p value > 0,01. In contrast, the interaction between sale price and Young Adult (YA) fiction is identified as a significant predictor, with a t-value of -8.05 (p < .001).
+
+Young Adult (YA) fiction leads with an average daily sale of 109.7 and a 95% confidence interval of 108.5 to 110.9, indicating it has the highest sales among the genres, followed by adult fiction. Adult fiction records an average of 79.2, within a 95% confidence interval ranging from 78.1 to 80.4. Non-fiction books have lower average daily sales at 70.2, with the 95% confidence interval spanning from 68.6 to 71.8. Non-fiction shows the least growth in daily sales.
+
+When comparing sales increases per unit increase in sale price, YA fiction surpasses adult fiction and non-fiction by margins of 30.48 and 39.50 units, respectively, with 95% confidence intervals indicating a range from -32.12 to -28.8 for adult fiction and -42.38 to -36.6 for non-fiction.
+
+This means adult fiction sales surpass non-fiction by an average of 9.03 daily sales units in the 95% confidence interval of 6.16 to 11.9.
+
+This analysis underscores that while higher sale prices generally correlate with reduced daily sales, the effect of increasing prices varies across genres, influencing their daily sales differently. Therefore the effect of changing sale price upon the number of sales varies across different genres.
+
+#### VIF
+
+```{r,warning=FALSE}
+
+vif(simpleRegDailySalesGenre)
+vif(simpleRegDailySalesGenreInteraction)
+
+```
+In the simpleRegDailySalesGenre model, the VIF analysis presents values below 5, showing minimal risk of multicollinearity  among genre, average daily sales and sale price. 
+
+The simpleRegDailySalesGenreInteraction model introduces an interaction variable (sale.price * genre), leading to substantially increased VIF values. This rise in VIF is not a concern for multicollinearity, but due to including the interaction term into the regression analysis.
+
+#### Annova
+
+```{r, warning=FALSE}
+# Comparing the interaction model with the base model.
+anova(simpleRegDailySales)
+anova(simpleRegDailySalesGenre)
+anova(simpleRegDailySalesGenreInteraction)
+anova(simpleRegDailySalesGenre,simpleRegDailySales,simpleRegDailySalesGenreInteraction)
+```
+The sale price has a significant effect on the daily sales, with the model simpleRegDailySales having a F-score of 2088, p <0.05. The genre has a significant effect on the daily sales,  with the model simpleRegDailySalesGenre having a F-score of 1161, p <0.001.
+
+Incorporating genre alongside sale price into the model results in a significant reduction in the Residual Sum of Squares (RSS), amounting to 1,131,046. This change produces a highly significant F-statistic of 1161.2, with a p-value < 0.001 underscoring the key role of genre in influencing daily sales.
+
+By further integrating both sale price and genre, including their interaction term into the model, RSS experiences an additional decrease of 53,952. The model's F-statistic, standing at 56.418 and paired with a p-value less than 2.2e-16, implies that adding the interaction term between sale price and genre significantly enhances the model's ability to predict daily sales. This combination, incorporating the interaction term, is identified as the most effective predictor of daily sales among the three models just tested above.
+
